@@ -189,10 +189,10 @@ public class DeviceProviderServiceImpl implements
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
 					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorCode(),
-					DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorMessage()) , "ADM-609");
-			throw new DataNotFoundException(DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorCode(),
-					DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorMessage());
+					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.MDS_DOES_NOT_EXIST.getErrorCode(),
+					DeviceProviderManagementErrorCode.MDS_DOES_NOT_EXIST.getErrorMessage()) , "ADM-609");
+			throw new DataNotFoundException(DeviceProviderManagementErrorCode.MDS_DOES_NOT_EXIST.getErrorCode(),
+					DeviceProviderManagementErrorCode.MDS_DOES_NOT_EXIST.getErrorMessage());
 		}
 
 		return true;
