@@ -45,7 +45,7 @@ public class DigitalIdDto {
 	/** The model. */
 	@NotBlank
 	@Size(min = 1, max = 36)
-	@ApiModelProperty(value = "mpdel", required = true, dataType = "java.lang.String")
+	@ApiModelProperty(value = "model", required = true, dataType = "java.lang.String")
 	private String model;
 
 	/** type *//*

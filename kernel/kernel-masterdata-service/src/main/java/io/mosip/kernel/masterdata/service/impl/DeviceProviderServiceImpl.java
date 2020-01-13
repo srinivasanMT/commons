@@ -27,8 +27,6 @@ import io.mosip.kernel.masterdata.entity.MOSIPDeviceService;
 import io.mosip.kernel.masterdata.entity.MOSIPDeviceServiceHistory;
 import io.mosip.kernel.masterdata.entity.RegisteredDevice;
 import io.mosip.kernel.masterdata.entity.RegisteredDeviceHistory;
-import io.mosip.kernel.masterdata.entity.RegistrationDeviceSubType;
-import io.mosip.kernel.masterdata.entity.RegistrationDeviceType;
 import io.mosip.kernel.masterdata.exception.DataNotFoundException;
 import io.mosip.kernel.masterdata.exception.MasterDataServiceException;
 import io.mosip.kernel.masterdata.exception.RequestException;
@@ -39,8 +37,6 @@ import io.mosip.kernel.masterdata.repository.MOSIPDeviceServiceHistoryRepository
 import io.mosip.kernel.masterdata.repository.MOSIPDeviceServiceRepository;
 import io.mosip.kernel.masterdata.repository.RegisteredDeviceHistoryRepository;
 import io.mosip.kernel.masterdata.repository.RegisteredDeviceRepository;
-import io.mosip.kernel.masterdata.repository.RegistrationDeviceSubTypeRepository;
-import io.mosip.kernel.masterdata.repository.RegistrationDeviceTypeRepository;
 import io.mosip.kernel.masterdata.utils.AuditUtil;
 import io.mosip.kernel.masterdata.utils.ExceptionUtils;
 import io.mosip.kernel.masterdata.utils.MapperUtils;
@@ -63,7 +59,7 @@ public class DeviceProviderServiceImpl implements
 
 	@Autowired
 	AuditUtil auditUtil;
-	
+
 	@Autowired
 	private RegisteredDeviceRepository registeredDeviceRepository;
 
@@ -82,29 +78,30 @@ public class DeviceProviderServiceImpl implements
 	@Autowired
 	private MOSIPDeviceServiceHistoryRepository deviceServiceHistoryRepository;
 
-	@Autowired
-	private RegistrationDeviceTypeRepository registeredDeviceTypeRepo;
-
-	@Autowired
-	private RegistrationDeviceSubTypeRepository registeredDeviceSubTypeRepo;
-
 	@Override
 	public ResponseDto validateDeviceProviders(ValidateDeviceDto validateDeviceDto) {
 		ResponseDto responseDto = new ResponseDto();
-		findRegisteredDevice(validateDeviceDto.getDeviceCode());
+		RegisteredDevice registeredDevice = findRegisteredDevice(validateDeviceDto.getDeviceCode());
 		isDeviceProviderPresent(validateDeviceDto.getDigitalId().getDpId());
 		isValidServiceSoftwareVersion(validateDeviceDto.getDeviceServiceVersion());
-		checkMappingBetweenProviderAndService(validateDeviceDto.getDigitalId().getDpId(),
-				validateDeviceDto.getDeviceServiceVersion(), validateDeviceDto.getDigitalId());
+
+		checkMappingBetweenDigitalIdAndService(validateDeviceDto.getDigitalId().getDpId(),
+				validateDeviceDto.getDigitalId());
 		checkMappingBetweenSwVersionDeviceTypeAndDeviceSubType(validateDeviceDto.getDeviceServiceVersion(),
-				validateDeviceDto.getDeviceCode());
-		validateDeviceCodeAndDigitalId(validateDeviceDto.getDeviceCode(), validateDeviceDto.getDigitalId());
+				registeredDevice);
+		try {
+			validateDeviceCodeAndDigitalId(registeredDevice, validateDeviceDto.getDigitalId());
+		} catch (NoSuchFieldException | SecurityException e) {
+
+			throw new MasterDataServiceException(
+					DeviceProviderManagementErrorCode.NO_SUCH_FIELD_EXCEPTION.getErrorCode(),
+					DeviceProviderManagementErrorCode.NO_SUCH_FIELD_EXCEPTION.getErrorMessage());
+		}
 		responseDto.setStatus(MasterDataConstant.VALID);
 		responseDto.setMessage("Device  details validated successfully");
 
 		return responseDto;
 	}
-
 
 	private RegisteredDevice findRegisteredDevice(String deviceCode) {
 		RegisteredDevice registeredDevice = null;
@@ -113,29 +110,36 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.DEVICE_VALIDATION_API_CALLED,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-605");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.DEVICE_VALIDATION_API_CALLED,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-605");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_REGISTERED_DEVICE));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_REGISTERED_DEVICE));
 		}
 
 		if (registeredDevice == null) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.DEVICE_VALIDATION_API_CALLED,DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorCode(),
-					DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorMessage()) , "ADM-606");
-			
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.DEVICE_VALIDATION_API_CALLED,
+							DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorCode(),
+							DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorMessage()),
+					"ADM-606");
+
 			throw new DataNotFoundException(DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorMessage());
 		}
 		if (!registeredDevice.getStatusCode().equalsIgnoreCase(REGISTERED)) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.DEVICE_VALIDATION_API_CALLED,DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorCode(),
-					DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorMessage()) , "ADM-607");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.DEVICE_VALIDATION_API_CALLED,
+							DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorCode(),
+							DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorMessage()),
+					"ADM-607");
 			throw new RequestException(DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorMessage());
 		}
@@ -152,18 +156,23 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-606");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-606");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_DEVICE_PROVIDER));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_DEVICE_PROVIDER));
 		}
 		if (deviceProvider == null) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INACTIVE.getErrorCode(),
-					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INACTIVE.getErrorMessage()) , "ADM-607");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INACTIVE.getErrorCode(),
+							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INACTIVE.getErrorMessage()),
+					"ADM-607");
 			throw new DataNotFoundException(DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INACTIVE.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INACTIVE.getErrorMessage());
 		}
@@ -179,18 +188,23 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-608");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-608");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
 		}
 		if (deviceServices.isEmpty()) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorCode(),
-					DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorMessage()) , "ADM-609");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorCode(),
+							DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorMessage()),
+					"ADM-609");
 			throw new DataNotFoundException(DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorCode(),
 					DeviceProviderManagementErrorCode.MDS_INACTIVE_STATE.getErrorMessage());
 		}
@@ -198,28 +212,34 @@ public class DeviceProviderServiceImpl implements
 		return true;
 	}
 
-	private boolean checkMappingBetweenProviderAndService(String providerId, String swServiceVersion,
-			DigitalIdDto digitalIdDto) {
+	private boolean checkMappingBetweenDigitalIdAndService(String providerId, DigitalIdDto digitalIdDto) {
 		MOSIPDeviceService deviceService = null;
 		try {
-			deviceService = deviceServiceRepository.findByDeviceProviderIdAndSwVersionAndMakeAndModel(providerId,
-					swServiceVersion, digitalIdDto.getMake(), digitalIdDto.getModel());
+			deviceService = deviceServiceRepository
+					.findByDeviceProviderIdAndRegDeviceTypeCodeAndRegDeviceSubCodeAndMakeAndModel(providerId,
+							digitalIdDto.getType(), digitalIdDto.getSubType(), digitalIdDto.getMake(),
+							digitalIdDto.getModel());
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-609");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-609");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
 		}
 
 		if (deviceService == null) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
-					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()) , "ADM-610");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()),
+					"ADM-610");
 			throw new DataNotFoundException(
 					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
 					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage());
@@ -235,11 +255,10 @@ public class DeviceProviderServiceImpl implements
 	 *            the device code
 	 * @return true, if successful
 	 */
-	private boolean checkMappingBetweenSwVersionDeviceTypeAndDeviceSubType(String swVersion, String deviceCode) {
-		RegisteredDevice registeredDevice = null;
+	private boolean checkMappingBetweenSwVersionDeviceTypeAndDeviceSubType(String swVersion,
+			RegisteredDevice registeredDevice) {
 		MOSIPDeviceService mosipDeviceService = null;
 		try {
-			registeredDevice = registeredDeviceRepository.findByCodeAndIsActiveIsTrue(deviceCode);
 
 			mosipDeviceService = deviceServiceRepository.findByDeviceDetail(swVersion,
 					registeredDevice.getDeviceTypeCode(), registeredDevice.getDeviceSTypeCode(),
@@ -247,19 +266,24 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-611");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-611");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
 		}
 
 		if (mosipDeviceService == null) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
-					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()) , "ADM-612");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()),
+					"ADM-612");
 			throw new DataNotFoundException(
 					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
 					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage());
@@ -269,8 +293,8 @@ public class DeviceProviderServiceImpl implements
 
 	}
 
-	private void validateDeviceCodeAndDigitalId(String deviceCode, DigitalIdDto digitalIdDto) {
-		RegisteredDevice registeredDevice = findRegisteredDevice(deviceCode);
+	private void validateDeviceCodeAndDigitalId(RegisteredDevice registeredDevice, DigitalIdDto digitalIdDto)
+			throws NoSuchFieldException, SecurityException {
 		List<ServiceError> serviceErrors = new ArrayList<>();
 		if (!registeredDevice.getMake().equals(digitalIdDto.getMake())) {
 			ServiceError serviceError = new ServiceError();
@@ -278,7 +302,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getMake()));
+					MasterDataConstant.MAKE));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getModel().equals(digitalIdDto.getModel())) {
@@ -287,7 +311,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getModel()));
+					MasterDataConstant.MODEL));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getDpId().equals(digitalIdDto.getDpId())) {
@@ -296,7 +320,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getDp()));
+					MasterDataConstant.DP_ID));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getDp().equals(digitalIdDto.getDp())) {
@@ -305,7 +329,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getDp()));
+					MasterDataConstant.DP));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getSerialNo().equals(digitalIdDto.getSerialNo())) {
@@ -314,7 +338,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getSerialNo()));
+					MasterDataConstant.SERIAL_NO));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getDeviceTypeCode().equals(digitalIdDto.getType())) {
@@ -334,8 +358,8 @@ public class DeviceProviderServiceImpl implements
 		if (!serviceErrors.isEmpty()) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,"KER-ADM-999",serviceErrors.toString()) , "ADM-613");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC, "KER-ADM-999", serviceErrors.toString()), "ADM-613");
 			throw new ValidationException(serviceErrors);
 		} else {
 			serviceErrors = null;
@@ -353,9 +377,15 @@ public class DeviceProviderServiceImpl implements
 				effTimes);
 		isDeviceProviderHistoryPresent(validateDeviceDto.getDigitalId().getDpId(), effTimes);
 		isValidServiceVersionFromHistory(validateDeviceDto.getDeviceServiceVersion(), effTimes);
-		checkMappingBetweenSwVersionDeviceTypeAndDeviceSubType(validateDeviceDto.getDeviceServiceVersion(),
-				validateDeviceDto.getDeviceCode());
-		validateDigitalIdWithRegisteredDeviceHistory(registeredDeviceHistory, validateDeviceDto.getDigitalId());
+		checkMappingBetweenSWVerDTypeAndDSubTypeHistory(validateDeviceDto.getDeviceServiceVersion(),
+				registeredDeviceHistory, effTimes);
+		try {
+			validateDigitalIdWithRegisteredDeviceHistory(registeredDeviceHistory, validateDeviceDto.getDigitalId());
+		} catch (NoSuchFieldException | SecurityException e) {
+			throw new MasterDataServiceException(
+					DeviceProviderManagementErrorCode.NO_SUCH_FIELD_EXCEPTION.getErrorCode(),
+					DeviceProviderManagementErrorCode.NO_SUCH_FIELD_EXCEPTION.getErrorMessage());
+		}
 		responseDto.setStatus(MasterDataConstant.VALID);
 		responseDto.setMessage("Device details history validated successfully");
 
@@ -363,7 +393,7 @@ public class DeviceProviderServiceImpl implements
 	}
 
 	private void validateDigitalIdWithRegisteredDeviceHistory(RegisteredDeviceHistory registeredDevice,
-			DigitalIdDto digitalIdDto) {
+			DigitalIdDto digitalIdDto) throws NoSuchFieldException, SecurityException {
 		List<ServiceError> serviceErrors = new ArrayList<>();
 		if (!registeredDevice.getMake().equals(digitalIdDto.getMake())) {
 			ServiceError serviceError = new ServiceError();
@@ -371,7 +401,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getMake()));
+					MasterDataConstant.MAKE));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getModel().equals(digitalIdDto.getModel())) {
@@ -380,7 +410,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getModel()));
+					MasterDataConstant.MODEL));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getDpId().equals(digitalIdDto.getDpId())) {
@@ -389,7 +419,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getDp()));
+					MasterDataConstant.DP_ID));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getDp().equals(digitalIdDto.getDp())) {
@@ -398,7 +428,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getDp()));
+					MasterDataConstant.DP));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getSerialNo().equals(digitalIdDto.getSerialNo())) {
@@ -407,7 +437,7 @@ public class DeviceProviderServiceImpl implements
 					.setErrorCode(DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorCode());
 			serviceError.setMessage(String.format(
 					DeviceProviderManagementErrorCode.PROVIDER_AND_DEVICE_CODE_NOT_MAPPED.getErrorMessage(),
-					digitalIdDto.getSerialNo()));
+					MasterDataConstant.SERIAL_NO));
 			serviceErrors.add(serviceError);
 		}
 		if (!registeredDevice.getDeviceTypeCode().equals(digitalIdDto.getType())) {
@@ -427,8 +457,8 @@ public class DeviceProviderServiceImpl implements
 		if (!serviceErrors.isEmpty()) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,"KER-ADM-999",serviceErrors.toString()) , "ADM-613");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC, "KER-ADM-999", serviceErrors.toString()), "ADM-613");
 			throw new ValidationException(serviceErrors);
 		} else {
 			serviceErrors = null;
@@ -444,23 +474,65 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-614");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-614");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE_HISTORY));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE_HISTORY));
 		}
 		if (deviceServiceHistory.isEmpty()) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
-					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()) , "ADM-619");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()),
+					"ADM-619");
 			throw new RequestException(DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
 					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage());
 		}
 
 		return true;
+	}
+
+	private boolean checkMappingBetweenSWVerDTypeAndDSubTypeHistory(String swVersion,
+			RegisteredDeviceHistory registeredDevice, LocalDateTime effTimes) {
+		MOSIPDeviceServiceHistory mosipDeviceService = null;
+		try {
+			mosipDeviceService = deviceServiceHistoryRepository.findByDeviceDetailHistory(swVersion,
+					registeredDevice.getDeviceTypeCode(), registeredDevice.getDeviceSTypeCode(),
+					registeredDevice.getMake(), registeredDevice.getModel(), registeredDevice.getDpId(), effTimes);
+		} catch (DataAccessException | DataAccessLayerException e) {
+			auditUtil.auditRequest(
+					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-611");
+			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_MOSIP_DEVICE_SERVICE));
+		}
+
+		if (mosipDeviceService == null) {
+			auditUtil.auditRequest(
+					MasterDataConstant.DEVICE_VALIDATION_FAILURE + ValidateDeviceDto.class.getSimpleName(),
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
+							DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage()),
+					"ADM-612");
+			throw new DataNotFoundException(
+					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorCode(),
+					DeviceProviderManagementErrorCode.SOFTWARE_VERSION_IS_NOT_A_MATCH.getErrorMessage());
+		}
+
+		return true;
+
 	}
 
 	private RegisteredDeviceHistory isRegisteredDeviceHistory(String deviceCode, LocalDateTime effTimes) {
@@ -471,28 +543,35 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-615");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-615");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_REGISTERED_DEVICE_HISTORY));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_REGISTERED_DEVICE_HISTORY));
 		}
 
 		if (registeredDeviceHistory == null) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorCode(),
-					DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorMessage()) , "ADM-616");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorCode(),
+							DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorMessage()),
+					"ADM-616");
 			throw new RequestException(DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_DOES_NOT_EXIST.getErrorMessage());
 		}
 		if (!registeredDeviceHistory.getStatusCode().equalsIgnoreCase(REGISTERED)) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorCode(),
-					DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorMessage()) , "ADM-617");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorCode(),
+							DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorMessage()),
+					"ADM-617");
 			throw new RequestException(DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_REVOKED_OR_RETIRED.getErrorMessage());
 		}
@@ -509,18 +588,23 @@ public class DeviceProviderServiceImpl implements
 		} catch (DataAccessException | DataAccessLayerException e) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()) , "ADM-618");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
+							DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage()),
+					"ADM-618");
 			throw new MasterDataServiceException(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorCode(),
-					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),MasterDataConstant.ERROR_OCCURED_DEVICE_PROVIDER_HISTORY));
+					String.format(DeviceProviderManagementErrorCode.DATABASE_EXCEPTION.getErrorMessage(),
+							MasterDataConstant.ERROR_OCCURED_DEVICE_PROVIDER_HISTORY));
 		}
 		if (deviceProviderHistory == null) {
 			auditUtil.auditRequest(
 					MasterDataConstant.DEVICE_VALIDATION_HISTORY_FAILURE + ValidateDeviceDto.class.getSimpleName(),
-					MasterDataConstant.AUDIT_SYSTEM,String.format(
-					MasterDataConstant.FAILURE_DESC,DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorCode(),
-					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorMessage()) , "ADM-620");
+					MasterDataConstant.AUDIT_SYSTEM,
+					String.format(MasterDataConstant.FAILURE_DESC,
+							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorCode(),
+							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorMessage()),
+					"ADM-620");
 			throw new RequestException(DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorMessage());
 		}
@@ -548,11 +632,13 @@ public class DeviceProviderServiceImpl implements
 		try {
 
 			if (deviceProviderRepository.findById(DeviceProvider.class, dto.getId()) != null) {
-				auditUtil.auditRequest(String.format(MasterDataConstant.FAILURE_CREATE, DeviceProvider.class.getCanonicalName()),
+				auditUtil.auditRequest(
+						String.format(MasterDataConstant.FAILURE_CREATE, DeviceProvider.class.getCanonicalName()),
 						MasterDataConstant.AUDIT_SYSTEM,
 						String.format(MasterDataConstant.FAILURE_DESC,
 								DeviceProviderManagementErrorCode.DEVICE_PROVIDER_EXIST.getErrorCode(),
-								DeviceProviderManagementErrorCode.DEVICE_PROVIDER_EXIST.getErrorMessage()),"ADM-723");
+								DeviceProviderManagementErrorCode.DEVICE_PROVIDER_EXIST.getErrorMessage()),
+						"ADM-723");
 				throw new RequestException(DeviceProviderManagementErrorCode.DEVICE_PROVIDER_EXIST.getErrorCode(),
 						String.format(DeviceProviderManagementErrorCode.DEVICE_PROVIDER_EXIST.getErrorMessage(),
 								dto.getId()));
@@ -570,11 +656,13 @@ public class DeviceProviderServiceImpl implements
 			deviceProviderHistoryRepository.create(entityHistory);
 
 		} catch (DataAccessLayerException | DataAccessException ex) {
-			auditUtil.auditRequest(String.format(MasterDataConstant.FAILURE_CREATE, DeviceProvider.class.getCanonicalName()),
+			auditUtil.auditRequest(
+					String.format(MasterDataConstant.FAILURE_CREATE, DeviceProvider.class.getCanonicalName()),
 					MasterDataConstant.AUDIT_SYSTEM,
 					String.format(MasterDataConstant.FAILURE_DESC,
 							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INSERTION_EXCEPTION.getErrorCode(),
-							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INSERTION_EXCEPTION.getErrorMessage()),"ADM-724");
+							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INSERTION_EXCEPTION.getErrorMessage()),
+					"ADM-724");
 			throw new MasterDataServiceException(
 					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INSERTION_EXCEPTION.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_INSERTION_EXCEPTION.getErrorMessage() + " "
@@ -601,11 +689,13 @@ public class DeviceProviderServiceImpl implements
 			renDeviceProvider = deviceProviderRepository.findById(DeviceProvider.class, dto.getId());
 
 			if (renDeviceProvider == null) {
-				auditUtil.auditRequest(String.format(MasterDataConstant.FAILURE_UPDATE, DeviceProvider.class.getCanonicalName()),
+				auditUtil.auditRequest(
+						String.format(MasterDataConstant.FAILURE_UPDATE, DeviceProvider.class.getCanonicalName()),
 						MasterDataConstant.AUDIT_SYSTEM,
 						String.format(MasterDataConstant.FAILURE_DESC,
 								DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorCode(),
-								DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorMessage()),"ADM-725");
+								DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorMessage()),
+						"ADM-725");
 				throw new RequestException(DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorCode(),
 						String.format(DeviceProviderManagementErrorCode.DEVICE_PROVIDER_NOT_EXIST.getErrorMessage(),
 								dto.getId()));
@@ -622,11 +712,13 @@ public class DeviceProviderServiceImpl implements
 			deviceProviderHistoryRepository.create(entityHistory);
 
 		} catch (DataAccessLayerException | DataAccessException ex) {
-			auditUtil.auditRequest(String.format(MasterDataConstant.FAILURE_UPDATE, DeviceProvider.class.getCanonicalName()),
+			auditUtil.auditRequest(
+					String.format(MasterDataConstant.FAILURE_UPDATE, DeviceProvider.class.getCanonicalName()),
 					MasterDataConstant.AUDIT_SYSTEM,
 					String.format(MasterDataConstant.FAILURE_DESC,
 							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_UPDATE_EXCEPTION.getErrorCode(),
-							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_UPDATE_EXCEPTION.getErrorMessage()),"ADM-726");
+							DeviceProviderManagementErrorCode.DEVICE_PROVIDER_UPDATE_EXCEPTION.getErrorMessage()),
+					"ADM-726");
 			throw new MasterDataServiceException(
 					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_UPDATE_EXCEPTION.getErrorCode(),
 					DeviceProviderManagementErrorCode.DEVICE_PROVIDER_UPDATE_EXCEPTION.getErrorMessage() + " "
